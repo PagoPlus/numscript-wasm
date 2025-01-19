@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	parser "github.com/PagoPlus/numscriptex/internal/parser/antlr"
-	"github.com/PagoPlus/numscriptex/internal/utils"
+	parser "github.com/PagoPlus/numscript-wasm/internal/parser/antlr"
+	"github.com/PagoPlus/numscript-wasm/internal/utils"
 
 	"github.com/antlr4-go/antlr/v4"
 )
@@ -189,7 +189,7 @@ func parseSource(sourceCtx parser.ISourceContext) Source {
 		return &SourceCapped{
 			Range: range_,
 			From:  parseSource(sourceCtx.Source()),
-			Cap:   parseValueExpr(sourceCtx.GetCap_()),
+			Cap:   parseValueExpr(sourceCtx.GetLimit()), // Change to GetLimit()
 		}
 
 	case *parser.SrcAccountUnboundedOverdraftContext:
