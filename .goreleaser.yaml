@@ -16,7 +16,7 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
-    main: ./internal/numscript/numscript.go
+    main: ./main.go
     goos:
       - wasip1
     goarch:
@@ -37,7 +37,7 @@ checksum:
   name_template: "numscript_checksums.txt"
 
 archives:
-  - formats: binary
+  - format: binary
     name_template: "numscript"
 
 changelog:
