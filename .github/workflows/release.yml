@@ -3,9 +3,6 @@ name: Release
 on:
   release:
     types: [created]
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: write
@@ -46,6 +43,6 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --snapshot
+          args: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
