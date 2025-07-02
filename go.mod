@@ -1,4 +1,4 @@
-module numscript
+module numscript-wasm
 
 go 1.23.0
 
