@@ -1,6 +1,6 @@
 # Numscript WASM CLI
 
-This project was originally a fork of the original [formancehq/numscript](https://github.com/formancehq/numscript) repository, adapted for WASM compatibility while maintaining the core CLI functionality.
+This project is a WebAssembly (WASM) port of the [formancehq/numscript](https://github.com/formancehq/numscript) CLI, enabling you to run Numscript execution in any WASM-compatible environment. Originally forked from the official repository, it now provides a standalone WASM binary that maintains full compatibility with the original CLI functionality.
 
 ## What is Numscript?
 
@@ -17,17 +17,18 @@ You can try Numscript online at [playground.numscript.org](https://playground.nu
 
 ## Installation
 
-Clone the repository and build the binary:
+### Prerequisites
 
+You'll need a WebAssembly (WASM) runtime to execute the numscript-wasm binary. This guide uses Wasmtime, but you can also use other WASM runtimes like Wasmer.
+
+**Install Wasmtime:**
 ```bash
-git clone git@github.com:PagoPlus/numscript-wasm.git
-
-cd numscript-wasm
-
-go build -o numscript-wasm main.go
+curl https://wasmtime.dev/install.sh -sSf | bash
 ```
 
-This will create a `numscript-wasm` executable in the current directory.
+### Download the Binary
+
+Download the WASM binary from the [latest release](https://github.com/PagoPlus/numscript-wasm/releases/latest) for your platform.
 
 ## Usage
 
@@ -38,7 +39,7 @@ The CLI provides two commands: `version` and `run`.
 Display the current version of the CLI:
 
 ```bash
-./numscript-wasm version
+wasmtime numscript.wasm version
 ```
 
 **Output:**
@@ -57,15 +58,50 @@ Execute a Numscript with the provided input data. The command reads JSON input f
 
 The input JSON must follow this structure:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `script` | string | The Numscript code to execute |
-| `variables` | object | [variables](https://docs.formance.com/numscript/reference/variables) used inside the script. |
-| `metadata` | object | [metada variables](https://docs.formance.com/numscript/reference/metadata) |
-| `balances` | object | Current account balances (nested object: account -> asset -> amount) |
-| `featureFlags` | object | Experimental features to enable (empty object) |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `script` | string | ✅ | The Numscript code to execute |
+| `variables` | object | ❌ | [Variables](https://docs.formance.com/modules/numscript/reference/variables) |
+| `metadata` | object | ❌ | [Account metadata](https://docs.formance.com/modules/numscript/reference/metadata) |
+| `balances` | object | ✅ | Current account balances. [Example below](#balances). |
+| `featureFlags` | object | ❌ | Experimental features to enable (empty objects as values). [Example below](#featureflags) |
 
-#### Complete Example
+##### balances
+Is an object containing the account name and their respective assets and balances. Ex:
+```json
+  "balances": {
+    "foo": {
+      "USD/2": 200,
+      "EUR/2": 100
+    },
+    "bar": {
+      "BRL/2": 200,
+      "JPY/2": 100
+    }
+  },
+```
+###### Asset Format
+Assets use the format `CURRENCY/PRECISION`:
+- `USD/2` = US Dollars with 2 decimal places
+- `EUR/2` = Euros with 2 decimal places  
+- `BTC/8` = Bitcoin with 8 decimal places
+
+##### featureFlags
+Is an object containing the name of the feature flag you want to use with an empty object as their value. Ex:
+```json
+  "featureFlags": {
+    "experimental-oneof": {},
+    "experimental-get-amount-function": {},
+    "experimental-mid-script-function-call": {}
+  }
+```
+
+Numscript does not have an official list of feature flags, but you can see the [source code](https://github.com/formancehq/numscript/blob/v0.0.17/internal/flags/flags.go) and the documentation with the [experimental features usage](https://github.com/formancehq/numscript/blob/main/differences-with-machine.md#new-functionalities-feature-flags)
+
+#### Examples
+
+##### Basic Transfer
+Simple account-to-account transfer:
 
 1. **Create an input file** (`example.json`):
 
@@ -87,7 +123,7 @@ The input JSON must follow this structure:
 2. **Execute the script**:
 
 ```bash
-./numscript-wasm run < example.json
+wasmtime numscript.wasm run < example.json
 ```
 
 3. **Expected output** (JSON format):
@@ -107,10 +143,121 @@ The input JSON must follow this structure:
 }
 ```
 
+#### Using variables
+
+1. **Input File:** (`example.json`):
+```json
+{
+  "script": "vars { account $user monetary $fee portion $tax } send $fee (source = $user destination = { $tax to @platform:tax remaining to @platform:revenue })",
+  "balances": {
+    "users:1234": {
+      "USD/2": 10000
+    }
+  },
+  "variables": {
+    "user": "users:1234",
+    "fee": "USD/2 100",
+    "tax": "20%"
+  },
+  "metadata": {},
+  "featureFlags": {
+    "experimental-oneof": {},
+    "experimental-get-amount-function": {},
+    "experimental-mid-script-function-call": {}
+  }
+}
+```
+
+2. **Execute the script**:
+```bash
+wasmtime numscript.wasm run < example.json
+```
+
+3. **Expected output** (JSON format):
+```json
+{
+  "postings": [
+    {
+      "source": "users:1234",
+      "destination": "platform:tax",
+      "amount": 20,
+      "asset": "USD/2"
+    },
+    {
+      "source": "users:1234",
+      "destination": "platform:revenue",
+      "amount": 80,
+      "asset": "USD/2"
+    }
+  ],
+  "txMeta": {},
+  "accountsMeta": {}
+}
+```
+
+
+#### Using metadata
+
+1. **Input File:** (`example.json`):
+```json
+{
+  "script": "vars { account $order account $merchant = meta($order, \"merchant\") portion $commission = meta($merchant, \"commission\") } send [USD/2 *] ( source = $order destination = { $commission to @platform:fees remaining to $merchant })",
+  "balances": {
+    "orders:2345": {
+      "USD/2": 1000
+    }
+  },
+  "variables": {
+    "order": "orders:2345"
+  },
+  "metadata": {
+    "orders:2345": {
+      "merchant": "merchants:1234"
+    },
+    "merchants:1234": {
+      "commission": "15%"
+    }
+  },
+  "featureFlags": {
+    "experimental-oneof": {},
+    "experimental-get-amount-function": {},
+    "experimental-mid-script-function-call": {}
+  }
+}
+```
+
+2. **Execute the script**:
+```bash
+wasmtime numscript.wasm run < example.json
+```
+
+3. **Expected output** (JSON format):
+```json
+{
+  "postings": [
+    {
+      "source": "orders:2345",
+      "destination": "platform:fees",
+      "amount": 150,
+      "asset": "USD/2"
+    },
+    {
+      "source": "orders:2345",
+      "destination": "merchants:1234",
+      "amount": 850,
+      "asset": "USD/2"
+    }
+  ],
+  "txMeta": {},
+  "accountsMeta": {}
+}
+```
+
 #### Allowing experimental features
 
 If you want to use experimental features, you need to enable them by adding their respective feature flag:
 
+1. **Input File:** (`example.json`):
 ```json
 {
   "script": "vars { monetary $mon = [USD/2 100] number $n = get_amount($mon) } send [USD/2 $n] (source = oneof { @foo @bar } destination = @baz)",
@@ -129,6 +276,27 @@ If you want to use experimental features, you need to enable them by adding thei
     "experimental-get-amount-function": {},
     "experimental-mid-script-function-call": {}
   }
+}
+```
+
+2. **Execute the script**:
+```bash
+wasmtime numscript.wasm run < example.json
+```
+
+3. **Expected output** (JSON format):
+```json
+{
+  "postings": [
+    {
+      "source": "bar",
+      "destination": "baz",
+      "amount": 100,
+      "asset": "USD/2"
+    }
+  ],
+  "txMeta": {},
+  "accountsMeta": {}
 }
 ```
 
